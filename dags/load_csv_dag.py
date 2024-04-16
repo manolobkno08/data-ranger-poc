@@ -42,16 +42,18 @@ def process_file(filename):
             # Cast and handle price column as int
             chunk_df['price'] = chunk_df['price'].fillna(0).astype(int)
             logging.info(f"DataFrame content:\n{chunk_df}")
+
             # Iterate over each row in the chunk dataFrame
             for index, row in chunk_df.iterrows():
                 cursor.execute(
                     "INSERT INTO data (timestamp, price, user_id) VALUES (%s, %s, %s)",
                     (row['timestamp'], row['price'], row['user_id'])
                 )
-            logging.info(f"Chunk of file {filename} processed successfully")
+            logging.info(
+                f"Chunk of file {filename}.csv processed successfully")
 
     except Exception as e:
-        logging.error(f"Error processing file {filename}: {e}")
+        logging.error(f"Error processing file {filename}.csv: {e}")
         conn.rollback()
     finally:
         cursor.close()
@@ -66,10 +68,17 @@ with DAG('process_csv_files',
          description='Dag that allow process csv files and save it into DB',
          catchup=False) as dag:
 
-    task1 = PythonOperator(
-        task_id='process_2012_1',
-        python_callable=process_file,
-        op_args=['2012-1']
-    )
+    tasks = []
 
-    task1
+    # Iterate over the 5 csv files
+    for i in range(1, 6):
+        task = PythonOperator(
+            task_id=f'process_2012_{i}',
+            python_callable=process_file,
+            op_args=[f'2012-{i}']
+        )
+
+        tasks.append(task)
+
+    for i in range(len(tasks) - 1):
+        tasks[i] >> tasks[i + 1]
