@@ -4,13 +4,17 @@ from datetime import datetime, timedelta
 import pandas as pd
 import logging
 import psycopg2
+import os
+import sys
 
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from utils.constants import DATABASE_NAME, DATABASE_USER, DATABASE_PASSWORD, DATABASE_HOST, DATABASE_PORT
 
 # Set airflow arguments
 default_args = {
     'owner': 'manuelgomez',
     'depends_on_past': False,
-    'start_date': datetime(2024, 4, 15),
+    'start_date': datetime(2024, 4, 16),
     'email_on_failure': False,
     'email_on_retry': False,
     'retries': 3,
@@ -22,11 +26,11 @@ default_args = {
 
 def process_file(filename):
     conn = psycopg2.connect(
-        dbname='data_ranger',
-        user='airflow',
-        password='airflow',
-        host='postgres',
-        port='5432'
+        dbname=DATABASE_NAME,
+        user=DATABASE_USER,
+        password=DATABASE_PASSWORD,
+        host=DATABASE_HOST,
+        port=DATABASE_PORT
     )
 
     conn.set_session(autocommit=True)

@@ -19,6 +19,7 @@ x-airflow-common: &airflow-common
     - ./pipelines:/opt/airflow/pipelines
     - ./tests:/opt/airflow/tests
     - ./utils:/opt/airflow/utils
+    - ./scripts:/opt/airflow/scripts
     - ./requirements.txt:/opt/airflow/requirements.txt
   user: "${AIRFLOW_UID:-50000}:${AIRFLOW_GID:-50000}"
   depends_on:
@@ -34,7 +35,7 @@ services:
       POSTGRES_DB: airflow
     volumes:
       - postgres-db-volume:/var/lib/postgresql/data
-      - ./init_db.sql:/docker-entrypoint-initdb.d/init_db.sql
+      - ./scripts/init_db.sql:/docker-entrypoint-initdb.d/init_db.sql
     ports:
       - 5432:5432
     healthcheck:
