@@ -14,7 +14,7 @@ from utils.constants import DATABASE_NAME, DATABASE_USER, DATABASE_PASSWORD, DAT
 default_args = {
     'owner': 'manuelgomez',
     'depends_on_past': False,
-    'start_date': datetime(2024, 4, 16),
+    'start_date': datetime(2024, 4, 17),
     'email_on_failure': False,
     'email_on_retry': False,
     'retries': 3,
@@ -36,21 +36,45 @@ def process_file(filename):
     conn.set_session(autocommit=True)
     cursor = conn.cursor()
 
-    try:
-        # Process the file by micro batches (20)
-        for chunk_df in pd.read_csv(f'/opt/airflow/data/{filename}.csv', chunksize=20, parse_dates=['timestamp']):
-            # Cast and handle price column as int
-            chunk_df['price'] = chunk_df['price'].fillna(0).astype(int)
-            logging.info(f"DataFrame content:\n{chunk_df}")
+    # Define variables for statistics
+    total_rows = 0
+    sum_prices = 0
+    min_price = float('inf')
+    max_price = float('-inf')
 
-            # Iterate over each row in the chunk dataFrame
+    try:
+        # Process the file by micro batches (1) to get new statistics for every row
+        for chunk_df in pd.read_csv(f'/opt/airflow/data/{filename}.csv', chunksize=1, parse_dates=['timestamp']):
+            logging.info(f"[Content]\n{chunk_df}")
+
+            # Cast and handle price column
+            chunk_df['price'] = chunk_df['price'].astype(float)
+
+            # Update statistics
+            total_rows += len(chunk_df)
+            sum_prices += chunk_df['price'].sum(skipna=True)
+            min_price = min(min_price, chunk_df['price'].min())
+            max_price = max(max_price, chunk_df['price'].max())
+            avg_price = round(sum_prices / total_rows if total_rows else 0, 1)
+
+            # Iterate over dataframe object for save into DB
             for index, row in chunk_df.iterrows():
+                # Save row
                 cursor.execute(
                     "INSERT INTO data (timestamp, price, user_id) VALUES (%s, %s, %s)",
-                    (row['timestamp'], row['price'], row['user_id'])
+                    (row['timestamp'], row['price'] if pd.notna(row['price']) else None, row['user_id'])
                 )
-            logging.info(
-                f"Chunk of file {filename}.csv processed successfully")
+
+                # Recreate statistics
+                cursor.execute(
+                    "INSERT INTO statistics (filename, total_rows, avg_price, min_price, max_price) VALUES (%s, %s, %s, %s, %s)",
+                    (f"{filename}.csv", total_rows, avg_price, int(min_price), int(max_price))
+                )
+                logging.info(
+                    f"[Final Statistics] Rows count ({total_rows}) | Avg price ({avg_price}) | Min price ({int(min_price)}) | Max price ({int(max_price)})")
+
+        logging.info(
+            f"File: {filename}.csv processed successfully")
 
     except Exception as e:
         logging.error(f"Error processing file {filename}.csv: {e}")
@@ -70,15 +94,29 @@ with DAG('process_csv_files',
 
     tasks = []
 
-    # Iterate over the 5 csv files
-    for i in range(1, 6):
-        task = PythonOperator(
-            task_id=f'process_2012_{i}',
-            python_callable=process_file,
-            op_args=[f'2012-{i}']
-        )
+    task = PythonOperator(
+        task_id=f'process_2012_1',
+        python_callable=process_file,
+        op_args=[f'2012-1']
+    )
 
-        tasks.append(task)
+    task2 = PythonOperator(
+        task_id=f'process_2012_2',
+        python_callable=process_file,
+        op_args=[f'2012-2']
+    )
 
-    for i in range(len(tasks) - 1):
-        tasks[i] >> tasks[i + 1]
+    task >> task2
+
+    # # Iterate over the 5 csv files
+    # for i in range(1, 6):
+    #     task = PythonOperator(
+    #         task_id=f'process_2012_{i}',
+    #         python_callable=process_file,
+    #         op_args=[f'2012-{i}']
+    #     )
+
+    #     tasks.append(task)
+
+    # for i in range(len(tasks) - 1):
+    #     tasks[i] >> tasks[i + 1]

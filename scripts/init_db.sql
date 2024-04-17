@@ -15,6 +15,6 @@ CREATE TABLE IF NOT EXISTS statistics (
     filename TEXT,
     total_rows INT,
     avg_price FLOAT,
-    min_price FLOAT,
-    max_price FLOAT
+    min_price INT,
+    max_price INT
 );
