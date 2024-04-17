@@ -22,7 +22,9 @@ default_args = {
 }
 
 # Define function to process CSV files
-conn = psycopg2.connect(
+
+def open_and_save_file_into_db(filename, total_rows, sum_prices, min_price, max_price):
+    conn = psycopg2.connect(
         dbname=DATABASE_NAME,
         user=DATABASE_USER,
         password=DATABASE_PASSWORD,
@@ -30,16 +32,8 @@ conn = psycopg2.connect(
         port=DATABASE_PORT
     )
 
-conn.set_session(autocommit=True)
-cursor = conn.cursor()
-
-
-def process_file(filename, ti):
-    # Define variables for statistics, if already exist get the value from previus task
-    total_rows = ti.xcom_pull(key='total_rows') or 0
-    sum_prices = ti.xcom_pull(key='sum_prices') or 0
-    min_price = ti.xcom_pull(key='min_price') or float('inf')
-    max_price = ti.xcom_pull(key='max_price') or float('-inf')
+    conn.set_session(autocommit=True)
+    cursor = conn.cursor()
 
     try:
         # Process the file by micro batches (1) to get new statistics for every row
@@ -77,12 +71,6 @@ def process_file(filename, ti):
         logging.info(
             f"File: {filename}.csv processed successfully")
 
-        # Push last statistic data to the next task
-        ti.xcom_push(key='total_rows', value=total_rows)
-        ti.xcom_push(key='sum_prices', value=sum_prices)
-        ti.xcom_push(key='min_price', value=min_price)
-        ti.xcom_push(key='max_price', value=max_price)
-
     except Exception as e:
         logging.error(f"Error processing file {filename}.csv: {e}")
         conn.rollback()
@@ -90,9 +78,40 @@ def process_file(filename, ti):
         cursor.close()
         conn.close()
 
+    return total_rows, sum_prices, min_price, max_price
+
+
+def process_file(filename, ti):
+    # Define variables for statistics, if already exist get the value from previus task
+    total_rows = ti.xcom_pull(key='total_rows') or 0
+    sum_prices = ti.xcom_pull(key='sum_prices') or 0
+    min_price = ti.xcom_pull(key='min_price') or float('inf')
+    max_price = ti.xcom_pull(key='max_price') or float('-inf')
+
+    # Process csv files
+    total_rows, sum_prices, min_price, max_price = open_and_save_file_into_db(filename, total_rows, sum_prices, min_price, max_price)
+
+    # Push last statistic data to the next task
+    ti.xcom_push(key='total_rows', value=total_rows)
+    ti.xcom_push(key='sum_prices', value=sum_prices)
+    ti.xcom_push(key='min_price', value=min_price)
+    ti.xcom_push(key='max_price', value=max_price)
 
 
 def process_validation(filename, ti):
+
+    conn = psycopg2.connect(
+        dbname=DATABASE_NAME,
+        user=DATABASE_USER,
+        password=DATABASE_PASSWORD,
+        host=DATABASE_HOST,
+        port=DATABASE_PORT
+    )
+
+    conn.set_session(autocommit=True)
+    cursor = conn.cursor()
+
+
     # Get current stats
     total_rows = ti.xcom_pull(key='total_rows')
     sum_prices = ti.xcom_pull(key='sum_prices')
@@ -103,22 +122,47 @@ def process_validation(filename, ti):
     logging.info(
                     f"[Statistics in execution] Rows count ({total_rows}) | Avg price ({avg_price}) | Min price ({int(min_price)}) | Max price ({int(max_price)})")
 
-    # Get database stats
-    cursor.execute(
-        """
-        SELECT
-            COUNT(id) AS rows_count,
-            FLOOR(AVG(price)) AS avg_price,
-            MIN(price) AS min_price,
-            MAX(price) AS max_price
-        FROM
-            data;
-        """
-    )
-    result = cursor.fetchone()
-    conn.close()
+    try:
+        # Get database stats
+        cursor.execute(
+            """
+            SELECT
+                COUNT(id) AS rows_count,
+                FLOOR(AVG(price)) AS avg_price,
+                MIN(price) AS min_price,
+                MAX(price) AS max_price
+            FROM
+                data;
+            """
+        )
+        result1 = cursor.fetchone()
+        # conn.close()
 
-    logging.info(f"[Statistics from DB] Rows count ({result[0]}) | Avg price ({result[1]}) | Min price ({result[2]}) | Max price ({result[3]})")
+        logging.info(f"[Statistics from DB] Rows count ({result1[0]}) | Avg price ({result1[1]}) | Min price ({result1[2]}) | Max price ({result1[3]})")
+
+        # Process validation.csv file
+        open_and_save_file_into_db(filename, total_rows, sum_prices, min_price, max_price)
+        cursor.execute(
+            """
+            SELECT
+                COUNT(id) AS rows_count,
+                FLOOR(AVG(price)) AS avg_price,
+                MIN(price) AS min_price,
+                MAX(price) AS max_price
+            FROM
+                data;
+            """
+        )
+        result2 = cursor.fetchone()
+        conn.close()
+
+        logging.info(f"[Statistics with validation] Rows count ({result2[0]}) | Avg price ({result2[1]}) | Min price ({result2[2]}) | Max price ({result2[3]})")
+    except Exception as e:
+        logging.error(f"Error in processing file {filename}.csv: {e}")
+        conn.rollback()
+    finally:
+        cursor.close()
+        conn.close()
 
 # Define DAG
 
