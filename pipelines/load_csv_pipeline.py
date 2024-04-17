@@ -1,11 +1,19 @@
 import pandas as pd
 import logging
+from typing import Tuple
 from utils.constants import DATABASE_NAME, DATABASE_USER, DATABASE_PASSWORD, DATABASE_HOST, DATABASE_PORT
 from utils.db import DatabaseManager
+from airflow.models import TaskInstance
 
 
-def get_stats_from_db():
-    # Get database statistics
+def get_stats_from_db() -> Tuple[int, int, int, int]:
+    """
+    Retrieve statistics from the 'data' table in the database
+
+    Returns:
+        A tuple containing the count of rows, average price, minimum price, and maximum price
+        If no data is found, returns None
+    """
     db_manager = DatabaseManager(
         DATABASE_NAME, DATABASE_USER, DATABASE_PASSWORD, DATABASE_HOST, DATABASE_PORT)
     query_stats = """
@@ -25,7 +33,20 @@ def get_stats_from_db():
         db_manager.close()
 
 
-def open_and_save_file_into_db(filename, total_rows, sum_prices, min_price, max_price):
+def open_and_save_file_into_db(filename: str, total_rows: int, sum_prices: float, min_price: float, max_price: float) -> Tuple[int, float, float, float]:
+    """
+    Open a CSV file, process its content by micro batches, and save data into the database
+
+    Args:
+        filename: The name of the CSV file to process
+        total_rows: The total number of rows processed
+        sum_prices: The sum of the 'price' values processed
+        min_price: The minimum 'price' value processed
+        max_price: The maximum 'price' value processed
+
+    Returns:
+        A tuple containing updated statistics after processing the file
+    """
     try:
         # Process the file by micro batches (1) to get new statistics for every row
         for chunk_df in pd.read_csv(f'/opt/airflow/data/{filename}.csv', chunksize=1, parse_dates=['timestamp']):
@@ -78,7 +99,14 @@ def open_and_save_file_into_db(filename, total_rows, sum_prices, min_price, max_
     return total_rows, sum_prices, min_price, max_price
 
 
-def process_file(filename, ti):
+def process_file(filename: str, ti: TaskInstance) -> None:
+    """
+    Process a single CSV file and save statistics using XCom to pass them between tasks
+
+    Args:
+        filename: The name of the CSV file to process
+        ti: The TaskInstance object
+    """
     # Define variables for statistics, if already exist get the value from previus task
     total_rows = ti.xcom_pull(key='total_rows') or 0
     sum_prices = ti.xcom_pull(key='sum_prices') or 0
@@ -96,7 +124,14 @@ def process_file(filename, ti):
     ti.xcom_push(key='max_price', value=max_price)
 
 
-def process_validation(filename, ti):
+def process_validation(filename: str, ti: TaskInstance) -> None:
+    """
+    Process the validation CSV file and compare the statistics before and after processing
+
+    Args:
+        filename: The name of the CSV file to process for validation
+        ti: The TaskInstance object
+    """
     # Get current stats
     total_rows = ti.xcom_pull(key='total_rows')
     sum_prices = ti.xcom_pull(key='sum_prices')
