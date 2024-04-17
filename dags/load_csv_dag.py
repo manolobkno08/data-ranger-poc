@@ -22,10 +22,7 @@ default_args = {
 }
 
 # Define function to process CSV files
-
-
-def process_file(filename, ti):
-    conn = psycopg2.connect(
+conn = psycopg2.connect(
         dbname=DATABASE_NAME,
         user=DATABASE_USER,
         password=DATABASE_PASSWORD,
@@ -33,9 +30,11 @@ def process_file(filename, ti):
         port=DATABASE_PORT
     )
 
-    conn.set_session(autocommit=True)
-    cursor = conn.cursor()
+conn.set_session(autocommit=True)
+cursor = conn.cursor()
 
+
+def process_file(filename, ti):
     # Define variables for statistics, if already exist get the value from previus task
     total_rows = ti.xcom_pull(key='total_rows') or 0
     sum_prices = ti.xcom_pull(key='sum_prices') or 0
@@ -55,7 +54,7 @@ def process_file(filename, ti):
             sum_prices += chunk_df['price'].sum(skipna=True)
             min_price = min(min_price, chunk_df['price'].min())
             max_price = max(max_price, chunk_df['price'].max())
-            avg_price = round(sum_prices / total_rows if total_rows else 0, 1)
+            avg_price = int(sum_prices / total_rows if total_rows else 0)
 
             # Iterate over dataframe object for save into DB
             for index, row in chunk_df.iterrows():
@@ -92,6 +91,35 @@ def process_file(filename, ti):
         conn.close()
 
 
+
+def process_validation(filename, ti):
+    # Get current stats
+    total_rows = ti.xcom_pull(key='total_rows')
+    sum_prices = ti.xcom_pull(key='sum_prices')
+    min_price = ti.xcom_pull(key='min_price')
+    max_price = ti.xcom_pull(key='max_price')
+    avg_price = int(sum_prices / total_rows)
+
+    logging.info(
+                    f"[Statistics in execution] Rows count ({total_rows}) | Avg price ({avg_price}) | Min price ({int(min_price)}) | Max price ({int(max_price)})")
+
+    # Get database stats
+    cursor.execute(
+        """
+        SELECT
+            COUNT(id) AS rows_count,
+            FLOOR(AVG(price)) AS avg_price,
+            MIN(price) AS min_price,
+            MAX(price) AS max_price
+        FROM
+            data;
+        """
+    )
+    result = cursor.fetchone()
+    conn.close()
+
+    logging.info(f"[Statistics from DB] Rows count ({result[0]}) | Avg price ({result[1]}) | Min price ({result[2]}) | Max price ({result[3]})")
+
 # Define DAG
 
 with DAG('process_csv_files',
@@ -100,39 +128,46 @@ with DAG('process_csv_files',
          description='Dag that allow process csv files and save it into DB',
          catchup=False) as dag:
 
-    task1 = PythonOperator(
+    task_file_1 = PythonOperator(
         task_id=f'process_2012_1',
         python_callable=process_file,
         op_args=['2012-1'],
         provide_context=True
     )
 
-    task2 = PythonOperator(
+    task_file_2 = PythonOperator(
         task_id=f'process_2012_2',
         python_callable=process_file,
         op_args=['2012-2'],
         provide_context=True
     )
 
-    task3 = PythonOperator(
+    task_file_3 = PythonOperator(
         task_id=f'process_2012_3',
         python_callable=process_file,
         op_args=['2012-3'],
         provide_context=True
     )
 
-    task4 = PythonOperator(
+    task_file_4 = PythonOperator(
         task_id=f'process_2012_4',
         python_callable=process_file,
         op_args=['2012-4'],
         provide_context=True
     )
-    5
-    task5 = PythonOperator(
+
+    task_file_5 = PythonOperator(
         task_id=f'process_2012_5',
         python_callable=process_file,
         op_args=['2012-5'],
         provide_context=True
     )
 
-    task1 >> task2 >> task3 >> task4 >> task5
+    task_validation_file = PythonOperator(
+        task_id=f'process_validation',
+        python_callable=process_validation,
+        op_args=['validation'],
+        provide_context=True
+    )
+
+    task_file_1 >> task_file_2 >> task_file_3 >> task_file_4 >> task_file_5 >> task_validation_file

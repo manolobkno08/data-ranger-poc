@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS statistics (
     id SERIAL PRIMARY KEY,
     filename TEXT,
     total_rows INT,
-    avg_price FLOAT,
+    avg_price INT,
     min_price INT,
     max_price INT
 );
