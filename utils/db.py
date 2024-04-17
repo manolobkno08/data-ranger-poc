@@ -14,7 +14,7 @@ class DatabaseManager:
         self.conn.set_session(autocommit=True)
 
     def execute_query(self, query, args=None, fetch=False):
-        """Execute a query and optionally fetch results."""
+        """Execute a query and return results."""
         with self.conn.cursor() as cursor:
             cursor.execute(query, args)
             if fetch:
