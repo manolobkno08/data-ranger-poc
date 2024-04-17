@@ -10,7 +10,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from utils.constants import DATABASE_NAME, DATABASE_USER, DATABASE_PASSWORD, DATABASE_HOST, DATABASE_PORT
 
-# Set airflow arguments
+# Set airflow settings
 default_args = {
     'owner': 'manuelgomez',
     'depends_on_past': False,
@@ -24,7 +24,7 @@ default_args = {
 # Define function to process CSV files
 
 
-def process_file(filename):
+def process_file(filename, ti):
     conn = psycopg2.connect(
         dbname=DATABASE_NAME,
         user=DATABASE_USER,
@@ -36,11 +36,11 @@ def process_file(filename):
     conn.set_session(autocommit=True)
     cursor = conn.cursor()
 
-    # Define variables for statistics
-    total_rows = 0
-    sum_prices = 0
-    min_price = float('inf')
-    max_price = float('-inf')
+    # Define variables for statistics, if already exist get the value from previus task
+    total_rows = ti.xcom_pull(key='total_rows') or 0
+    sum_prices = ti.xcom_pull(key='sum_prices') or 0
+    min_price = ti.xcom_pull(key='min_price') or float('inf')
+    max_price = ti.xcom_pull(key='max_price') or float('-inf')
 
     try:
         # Process the file by micro batches (1) to get new statistics for every row
@@ -62,19 +62,27 @@ def process_file(filename):
                 # Save row
                 cursor.execute(
                     "INSERT INTO data (timestamp, price, user_id) VALUES (%s, %s, %s)",
-                    (row['timestamp'], row['price'] if pd.notna(row['price']) else None, row['user_id'])
+                    (row['timestamp'], row['price'] if pd.notna(
+                        row['price']) else None, row['user_id'])
                 )
 
                 # Recreate statistics
                 cursor.execute(
                     "INSERT INTO statistics (filename, total_rows, avg_price, min_price, max_price) VALUES (%s, %s, %s, %s, %s)",
-                    (f"{filename}.csv", total_rows, avg_price, int(min_price), int(max_price))
+                    (f"{filename}.csv", total_rows, avg_price,
+                     int(min_price), int(max_price))
                 )
                 logging.info(
                     f"[Final Statistics] Rows count ({total_rows}) | Avg price ({avg_price}) | Min price ({int(min_price)}) | Max price ({int(max_price)})")
 
         logging.info(
             f"File: {filename}.csv processed successfully")
+
+        # Push last statistic data to the next task
+        ti.xcom_push(key='total_rows', value=total_rows)
+        ti.xcom_push(key='sum_prices', value=sum_prices)
+        ti.xcom_push(key='min_price', value=min_price)
+        ti.xcom_push(key='max_price', value=max_price)
 
     except Exception as e:
         logging.error(f"Error processing file {filename}.csv: {e}")
@@ -92,31 +100,39 @@ with DAG('process_csv_files',
          description='Dag that allow process csv files and save it into DB',
          catchup=False) as dag:
 
-    tasks = []
-
-    task = PythonOperator(
+    task1 = PythonOperator(
         task_id=f'process_2012_1',
         python_callable=process_file,
-        op_args=[f'2012-1']
+        op_args=['2012-1'],
+        provide_context=True
     )
 
     task2 = PythonOperator(
         task_id=f'process_2012_2',
         python_callable=process_file,
-        op_args=[f'2012-2']
+        op_args=['2012-2'],
+        provide_context=True
     )
 
-    task >> task2
+    task3 = PythonOperator(
+        task_id=f'process_2012_3',
+        python_callable=process_file,
+        op_args=['2012-3'],
+        provide_context=True
+    )
 
-    # # Iterate over the 5 csv files
-    # for i in range(1, 6):
-    #     task = PythonOperator(
-    #         task_id=f'process_2012_{i}',
-    #         python_callable=process_file,
-    #         op_args=[f'2012-{i}']
-    #     )
+    task4 = PythonOperator(
+        task_id=f'process_2012_4',
+        python_callable=process_file,
+        op_args=['2012-4'],
+        provide_context=True
+    )
+    5
+    task5 = PythonOperator(
+        task_id=f'process_2012_5',
+        python_callable=process_file,
+        op_args=['2012-5'],
+        provide_context=True
+    )
 
-    #     tasks.append(task)
-
-    # for i in range(len(tasks) - 1):
-    #     tasks[i] >> tasks[i + 1]
+    task1 >> task2 >> task3 >> task4 >> task5
