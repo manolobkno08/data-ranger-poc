@@ -8,7 +8,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from pipelines import process_file
 from pipelines import process_validation
 
-# Set airflow settings
+# Set DAG settings
 default_args = {
     'owner': 'manuelgomez',
     'depends_on_past': False,
@@ -22,7 +22,7 @@ default_args = {
 # Define DAG
 with DAG('process_csv_files',
          default_args=default_args,
-         schedule_interval=timedelta(days=1),
+         schedule_interval=None,
          description='Dag that allow process csv files and save it into DB',
          catchup=False) as dag:
 

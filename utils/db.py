@@ -1,8 +1,18 @@
 import psycopg2
-import logging
 
 
 class DatabaseManager:
+    """
+    Manages a connection to a PostgreSQL database
+
+    Args:
+        dbname (str): Database name
+        user (str): Database username
+        password (str): Password used to authenticate
+        host (str): Host database
+        port (str): Database port
+    """
+
     def __init__(self, dbname, user, password, host, port):
         self.conn = psycopg2.connect(
             dbname=dbname,
