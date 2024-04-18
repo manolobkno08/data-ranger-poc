@@ -60,8 +60,6 @@ If you have added new libraries or changed the Docker configuration, rebuild the
 * This setup is configured to run Airflow with the Local Executor.
 * For production environments, further configuration is needed.
 
-Thank you for using Data Ranger POC Airflow environment!
-
 
 
 
